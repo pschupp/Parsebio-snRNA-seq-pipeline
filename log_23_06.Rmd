@@ -1,0 +1,179 @@
+# Introduction
+observations on run for XX XX XX (june 2023)
+
+goal was to XXX
+
+initial observations:
+
+very low quality reads for index, quality scores 18-29, would actually be discard
+read 1 has higher scores around 30
+read 2 is the worst with mostly Ns
+
+reads in order of their sequencing:
+read 1 is barely passing quality and will result in Ok read, this is the most important one as it will allow us to determine whether the jackpotting effect of the barcodes has been ammeliorated
+index read is of low quality thus leading to many undetermined reads. edit (hamming) distance correction of 1.
+read 2 is mostly Ns and has almost no recoverable information. this is the read of the insert
+
+# Trying the pipeline
+```{bash}
+for i in {1..2}
+do
+    echo "${i}_S${i}_L001_R1_001.fastq.gz"
+    echo "${i}_S${i}_L001_R2_001.fastq.gz"
+    split-pipe \
+        --mode all \
+        --kit WT \
+        --genome_dir /home/shared/hg_align_db/GRCh38_gencode_primary/parse_split_pipe_genome \
+        --fq1 "~/@patrick/parsebio/23_05/230529_M00179_0434_000000000-DL3KG/Data/Intensities/BaseCalls/${i}_S${i}_L001_R1_001.fastq.gz" \
+        --fq2 "~/@patrick/parsebio/23_05/230529_M00179_0434_000000000-DL3KG/Data/Intensities/BaseCalls/${i}_S${i}_L001_R2_001.fastq.gz" \
+        --output_dir "~/@patrick/parsebio/23_05/libs/lib_${i}" \
+        --nthreads 15
+done
+    
+split-pipe \
+    --mode pre \
+    --kit WT \
+    --genome_dir /home/shared/hg_align_db/GRCh38_gencode_primary/parse_split_pipe_genome \
+    --fq1 "~/@patrick/parsebio/23_05/230529_M00179_0434_000000000-DL3KG/Data/Intensities/BaseCalls/combo_R1.fastq.gz" \
+    --fq2 "~/@patrick/parsebio/23_05/230529_M00179_0434_000000000-DL3KG/Data/Intensities/BaseCalls/combo_R2.fastq.gz" \
+    --output_dir "~/@patrick/parsebio/23_05/libs/lib_combo" \
+    --nthreads 15
+```
+
+split-pipe does not work. maybe because R2 is all Ns. Therefore, I will need to process it myself. This only futher proves my point that using these complicated solutions has no error restistance and it fails when the slightest thing changes with fixing the problem being very difficult.
+
+# New plan
+plan will be to:
+1. DONE - isolate sequences (every fourth line)
+2. DONE - filter on sequences which are 86 chars long
+3. DONE - get quality metrics and filter on those which are all above 30
+4. DONE - get position 79-86
+5. DONE - for each sequence, determine the hamming distance to each barcode. then 1-8 distance 
+6. NOT DONE, background missalignment will drown out the signal - perform sum of all sequences for each barcode and plot in bar plot.
+7. DONE - alternate approach will be to allow N mismatches and assign each sequence to a barcode or none
+
+## Create combined sequencig files
+
+```{bash}
+cat combo_R2.fastq.gz Undetermined_S0_L001_R2_001.fastq.gz > all_R2.fastq.gz
+gunzip -c  all_R2.fastq.gz | sed -n '2~4p' - > all_seq.txt
+gunzip -c  all_R2.fastq.gz | sed -n '4~4p' - > all_qual.txt
+```
+
+## Pipeline in R
+
+```{r}
+# libraries
+library('data.table')
+library('knitr')
+library('future.apply')
+library('ggplot2')
+plan(multisession)
+WD = '~/@patrick/parsebio/23_05/230529_M00179_0434_000000000-DL3KG/Data/Intensities/BaseCalls/'
+seqs = fread(paste0(WD, 'all_seq.txt'), header = FALSE)
+quals = fread(paste0(WD, 'all_qual.txt'), header = FALSE)
+# filter on sequences which are 86 bases
+seq_len = sapply(seqs, nchar)
+kable(table(seq_len))
+filt1 = (seq_len) == 86
+# only include those sequences whose terminal 8 bases are all above 30
+qual_table = seq(0, 41)
+names(qual_table) = c('!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J')
+quals_num = sapply(unlist(quals), function(x){
+    temp = unlist(strsplit(as.character(x), ''))
+    temp = list(qual_table[match(temp, names(qual_table))])
+    temp
+})
+filt2 = sapply(quals_num, function(x){
+    x = unlist(x)
+    all(x[(length(x-7)):length(x)]>30)
+})
+# combine 2 filters for final filter of sequences of 86 bp whose 6 terminal bases are over q30
+filt_final = intersect(which(filt1), which(filt2))
+length(filt_final)/length(unlist(seqs))
+# about half of sequences retained
+seq_selec = sapply(seqs[filt_final], function(x){
+    substr(x, 79, 86)
+})
+# for each sequence, determine the hamming distance to each barcode. 
+# read in barcodes
+barcs = fread('/mnt/bdata/@patrick/parsebio/23_05/libs/lib_combo/process/barcode_data.csv')
+barcs_rd1 = barcs$sequence[barcs$type == 'T']
+barcs_well = barcs$well[barcs$type == 'T']
+# then x-8 distance and perform sum of all sequences for each barcode
+barc_score = future_lapply(barcs_rd1, function(barc){
+    lapply(seq_selec, function(seq_s){
+        8-sum(unlist(strsplit(barc, '')) != unlist(strsplit(seq_s, '')))
+    })
+})
+lapply(barc_score, function(x) table(unlist(x)))
+# get some of `barc_score` scores of 7 or 8
+hitSum = sapply(barc_score, function(x){
+    temp = unlist(table(unlist(x)))
+    sumTemp = 0
+    if(length(temp)>7){sumTemp = temp[8]}
+    if(length(temp)>8){sumTemp = sumTemp + temp[9]}
+    sumTemp
+})
+names(hitSum) = barcs_well
+kable(hitSum)
+kable(hitSum/sum(hitSum))
+# plot in bar plot.
+plotSum = data.frame(wells = factor(names(hitSum), levels = names(hitSum)), reads = hitSum)
+pdf('barcode_barplot_numb.pdf', width = 13)
+ggplot(plotSum, aes(x = wells, y = reads)) +
+    geom_bar(stat = 'identity') +
+    labs(x = 'Barcode 1 wells', y = 'Number of reads', title = 'Distribution of barcode 1 reads') +
+    scale_y_continuous(expand = c(0,0)) +
+    theme_linedraw()
+dev.off()
+plotSum = data.frame(wells = factor(names(hitSum), levels = names(hitSum)), reads = 100*hitSum/sum(hitSum))
+pdf('barcode_barplot_perc.pdf', width = 13)
+ggplot(plotSum, aes(x = wells, y = reads)) +
+    geom_bar(stat = 'identity') +
+    labs(x = 'Barcode 1 wells', y = 'Percentage of reads', title = 'Distribution of barcode 1 reads') +
+    scale_y_continuous(expand = c(0,0)) +
+    theme_linedraw()
+dev.off()
+```
+
+## Check whether there is a good distribution of UMIs
+```{r}
+# only include those sequences whose first 10 bases are all above 30
+filt3 = sapply(quals_num, function(x){
+    x = unlist(x)
+    all(x[1:10]>30)
+})
+seq_selec2 = sapply(seqs[filt3], function(x){
+    substr(x, 1, 10)
+})
+seq_selec_dist = table(unlist(seq_selec2))
+head(sort(seq_selec_dist/sum(seq_selec_dist), decreasing = TRUE))
+seq_selec_dist_distro = table(seq_selec_dist)
+plotUmi = data.frame (freq = factor(names(seq_selec_dist_distro), levels = names(seq_selec_dist_distro)), num_barc = as.numeric(seq_selec_dist_distro))
+pdf('umi_plot.pdf', width = 13)
+ggplot(plotUmi, aes(x = freq, y = num_barc)) +
+    geom_bar(stat = 'identity') +
+    labs(y = 'Number of barcodes', x = 'Frequency', title = 'Distribution of UMIs') +
+    scale_y_continuous(expand = c(0,0)) +
+    theme_linedraw()
+dev.off()
+```
+
+# Next question is why the run went poorly
+Possibilities are:
+1. Overloading of library with subsequent difficulty to deonvolute spots on the flowcell.
+2. Lack of sequence diversity
+
+In answer to (1.) we can ask Illumina or Eric Chow tolook at the flow cell imaging data to come with a conclusive answer. For (2.), we can check it directly with fastqc on read 1.
+
+```{bash}
+cd ~/@patrick/parsebio/23_05/230529_M00179_0434_000000000-DL3KG/Data/Intensities/BaseCalls
+fastqc combo_R1.fastq.gz
+```
+
+There is definetly an issue with the per base sequence content of read 1!
+It mostly starts with:
+AAGCAGTGGTATCAACGCAGAGT  GAATGGG
+(This is the expected seq, I call unknown after the GGG, but should have disappeared!!!)
+
