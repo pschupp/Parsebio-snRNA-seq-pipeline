@@ -117,7 +117,6 @@ rule umi_tools:
     log: "03-umi-extract/{file_names}.log.txt"
     params:
         bcRegex=lambda wildcards: '"(?P<umi_1>.{10})(?P<cell_3>.{8})(?P<discard_1>GTGGCCGATGTTTCGCATCGGCGTACGACT){s<=30}(?P<cell_2>.{8})(?P<discard_2>ATCCACGTGCTTGAGACTGTGG){s<=22}(?P<cell_1>.{8}).*"',
-#        bcRegex=lambda wildcards: '"(?P<umi_1>.{10})(?P<cell_3>.{8})(?P<discard_1>.{30})(?P<cell_2>.{8})(?P<discard_2>.{22}).*"',
         files = "01-basecalled/{file_names}_R1_001.fastq.gz",
         whitelist = "."
     threads: 1
