@@ -1,6 +1,6 @@
 # start with expectation that input is folder from sequencing machine in the form:
 # [YY][MM][DD]_M00179_0434_000000000-DL3KG
-# also includes the following usefull files:
+# {{{ expalanation of useful files in the run folder
 # RTA Logs folder - Contains log files that describe each step performed by RTA (real-time analysis) for each read
 # InterOp folder - Contains binary files used by Sequencing Analysis Viewer (SAV) to summarize various primary analysis metric such as cluster density, intensities, quality scores, and overall run quality
 # Logs folder - Contains log files that describe eavery step performed by the intrument for each cycle
@@ -8,8 +8,7 @@
 # runParameters.xml - Contains a summary of run parameters and information about run components sucah as the RFID of the flow cell and reagents associated with the run.
 # SampleSheet.csv - Provides parameters for teh run and subsequent analysis.
 # Images and Thumbnail_Images folders - Contains focus images and thumbnail images. 
-# TODO: implement whitelist and see if htseq runs any faster. if it does great, also try with previous dataset that worked better
-
+# }}}
 
 threads = workflow.cores
 import os
@@ -82,6 +81,7 @@ rule bcl_2_fastq:
         --writing-threads=5 \\
         2> 01-basecalled/basecalling.log.txt
         """
+# {{{ documentation for options in bcl2fastq
 # --minimum-trimmed-read-length arg (=35)         minimum read length after adapter trimming
 # --with-failed-reads                             include non-PF clusters
 # --no-lane-splitting                             do not split fastq files by lane.
@@ -89,8 +89,8 @@ rule bcl_2_fastq:
 # --loading-threads Number of threads to load BCL data
 # --processing-threads Number of threads to process demultiplexing data.
 # --writing-threads Number of threads to write FASTQ data. This number must be lower than number of samples.
+# }}}
 
-#"02-fastqc/{file_names}.std_out.txt"
 rule fastqc:
     input: "01-basecalled/basecalling.log.txt"
     output: "02-fastqc/{fileFull}_001_fastqc.html"
@@ -98,8 +98,6 @@ rule fastqc:
     log: 
             stdOut = "02-fastqc/{fileFull}.std_out.txt",
             stdErr = "02-fastqc/{fileFull}.std_err.txt"
-        #         stdOut = expand("02-fastqc/{fileFull}.std_out.txt", fileFull=fileN),
-        #         stdErr = expand("02-fastqc/{fileFull}.std_err.txt", fileFull=fileN)
     threads: 3
     shell:
         """
@@ -111,8 +109,9 @@ rule fastqc:
         2> {log.stdErr} 
         """
 
-# Use read 2 to deconvolute barcode and extract umi. 
 # TODO: is there any hamming code correction? 
+# TODO: implement whitelist and see if htseq runs any faster. if it does great, also try with previous dataset that worked better
+
 rule umi_tools:
     input: "01-basecalled/basecalling.log.txt"
     output: "03-umi-extract/{file_names}_R1_001.fastq.gz"
@@ -131,9 +130,9 @@ rule umi_tools:
         --read2-out={output} \\
         --stdin=01-basecalled/{wildcards.file_names}_R2_001.fastq.gz \\
         --stdout=03-umi-extract/{wildcards.file_names}_R2_001.fastq.gz \\
-         --log={log}
+        --log={log} \\
+        --whitelist={params.whitelist} 
         """
-#         --whitelist={params.whitelist} 
 
 rule trimmomatic:
     input: "03-umi-extract/{file_names}_R1_001.fastq.gz"
@@ -200,10 +199,10 @@ rule create_field_CB_and_UB:
         | sed -E 's/_([A-Z]{{24}})_([A-Z]{{10}})(.*)$/_\\1_\\2\\3\tCB:Z:\\1\\2\tUB:Z:\\2/g' \\
         | samtools view -O BAM -b -@ {threads} -o {output} - 
         """
-        
+# {{{ documentation for command        
 # create field CB (cell barcode) and UB (unique UMI barcode)
-# already done by trimmomatic
-#        --clip3pAdapterSeq AAAAAAAA --clip3pAdapterMMp 0.1 \\
+# }}}
+
 rule sort_query:
    input: "05_aligned/{file_names}.fixed_tag.bam"
    output: "06_sorted/{file_names}.bam"
@@ -218,8 +217,6 @@ rule sort_query:
        2> 06_sorted/{wildcards.file_names}.sort.std_err.txt
        """
 
-# need to deduplicate based on sublibrary (SM/CB tag) and UMI (OL/UB tag)
-# TODO: use UmiAwareMarkDuplicatesWithMateCigar
 rule deduplicate:
     input: "06_sorted/{file_names}.bam"
     output: "07_deduplicated/{file_names}.deduplicated.bam"
@@ -244,7 +241,9 @@ rule deduplicate:
         > 07_deduplicated/{wildcards.file_names}.markdup.std_out.txt \\
         2> 07_deduplicated/{wildcards.file_names}.markdup.std_err.txt
         """
-# {{{ options for deduplicate tool
+# {{{ options for deduplicate tool,
+# note that UmiAwareMarkDuplicatesWithMateCigar does not seem to work for me with this data.
+# need to deduplicate based on sublibrary (SM/CB tag) and UMI (OL/UB tag)
 # --INPUT,-I:String             One or more input SAM or BAM files to analyze. Must be coordinate sorted. This argument must be specified at least once. Required .
 # --METRICS_FILE,-M:File        File to write duplication metrics to  Required.
 # --OUTPUT,-O:File              The output file to write marked records to  Required. 
@@ -296,6 +295,7 @@ rule bam_index:
 # for now try option 2
 # cb tag is barcode, ub tag is umi
 # will need to investigage options 1, options 2 is way too slow
+
 rule hts_seq_counts:
     input: 
         file="07_deduplicated/{file_names}.deduplicated.bam",
@@ -351,7 +351,7 @@ rule hts_seq_counts:
 # --version Show software version and exit
 # }}}
 
-# rule feature_counts:
+# {{{ rule feature_counts:
 #     input: "07_deduplicated/{file_names}.deduplicated.bam"
 #     output: "08_feature_count/{file_names}.deduplicated.bam.featureCounts.bam"
 #     threads: 15
@@ -373,15 +373,17 @@ rule hts_seq_counts:
 #         2> 08_feature_count/{wildcards.file_names}.std_err.txt
 #         """
 
-# # options:
-# # -a gtf file input
-# # -o output file count matrix
-# # -R input file format
-# # -g ninth column of gtf file. the attribute type by which to group features. look to gtf file for correct naming. could also be transcript_id or exon_id
-# # -t third column of gtf file. indicates what type of features should be considered. When using -g gene_id should use gene. If using transcript_id or exon_id, should use processed transcript.
-# # -M multi-mapping reads will counted. Uses NH tag for multimappers.
-# # -O assign reads to all overlaping features
-# # --fraction Assign fractional counts to features
+# options:
+# -a gtf file input
+# -o output file count matrix
+# -R input file format
+# -g ninth column of gtf file. the attribute type by which to group features. look to gtf file for correct naming. could also be transcript_id or exon_id
+# -t third column of gtf file. indicates what type of features should be considered. When using -g gene_id should use gene. If using transcript_id or exon_id, should use processed transcript.
+# -M multi-mapping reads will counted. Uses NH tag for multimappers.
+# -O assign reads to all overlaping features
+# --fraction Assign fractional counts to features
+# }}}
+
 rule multiqc:
     input: 
         inDir=".",
@@ -394,7 +396,7 @@ rule multiqc:
         multiqc {input.inDir} \\
         -o 09_multiqc
         """
-# 
+# {{{ extra, TODO: delete 
 # rule bam_sort:
 #     input: "07_feature_count/{file_names}.deduplicated.bam.featureCounts.bam"
 #     output: "08_sort_index/{file_names}.sort.bam"
@@ -448,3 +450,4 @@ rule multiqc:
 #         -o 09_multiqc; \\
 #         multiqc 02_pretrim_fastqc -o 02_pretrim_fastqc
 #         """
+# }}}
