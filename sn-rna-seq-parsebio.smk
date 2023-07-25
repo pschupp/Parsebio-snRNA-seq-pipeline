@@ -8,6 +8,8 @@
 # runParameters.xml - Contains a summary of run parameters and information about run components sucah as the RFID of the flow cell and reagents associated with the run.
 # SampleSheet.csv - Provides parameters for teh run and subsequent analysis.
 # Images and Thumbnail_Images folders - Contains focus images and thumbnail images. 
+# TODO: implement whitelist and see if htseq runs any faster. if it does great, also try with previous dataset that worked better
+
 
 threads = workflow.cores
 import os
@@ -133,125 +135,225 @@ rule umi_tools:
         """
 #         --whitelist={params.whitelist} 
 
-rule multiqc:
-    input: 
-        inDir=".",
-        fastqcReport = expand("02-fastqc/{fileFull}.std_err.txt", fileFull=fileN),
-        processedReads = expand("03-umi-extract/{file_names}_R1_001.fastq.gz", file_names = sampleN)
-    output:
-        outFile="09_multiqc/multiqc_report.html"
+rule trimmomatic:
+    input: "03-umi-extract/{file_names}_R1_001.fastq.gz"
+    output: "04-trim-reads/{file_names}_R1_001.fastq.gz"
+    params:
+        headcrop=4,
+        clipfile="/usr/share/trimmomatic/TruSeq3-SE.polyA.fa"
+    threads: 1
     shell:
         """
-        multiqc {input.inDir} \\
-        -o 09_multiqc
+        TrimmomaticSE {input} {output} \\
+        -trimlog {output}.trim_full_log.txt \\
+        -threads {threads} \\
+        ILLUMINACLIP:{params.clipfile}:2:30:7 \\
+        LEADING:10 \\
+        TRAILING:10 \\
+        SLIDINGWINDOW:4:15 \\
+        MINLEN:30 \\
+        HEADCROP:{params.headcrop} \\
+        > 04-trim-reads/{wildcards.file_names}.std_out.txt \\
+        2> 04-trim-reads/{wildcards.file_names}.std_err.txt
         """
-# 
-# rule trimmomatic:
-#     input:"01_basecalled/{file_names}.umi.fastq.gz"
-#     output:"02_trimmed/{file_names}.trimmed.fastq"
-#     params:
-#         headcrop=4,
-#         clipfile="/usr/share/trimmomatic/TruSeq3-SE.polyA.fa"
-#     threads: 1
-#     shell:
-#         """
-#         TrimmomaticSE {input} {output} \\
-#         -trimlog {output}.trim_full_log.txt \\
-#         -threads {threads} \\
-#         ILLUMINACLIP:{params.clipfile}:2:30:7 \\
-#         LEADING:10 \\
-#         TRAILING:10 \\
-#         SLIDINGWINDOW:4:15 \\
-#         MINLEN:30 \\
-#         HEADCROP:{params.headcrop} \\
-#         > 02_trimmed/{wildcards.file_names}.std_out.txt \\
-#         2> 02_trimmed/{wildcards.file_names}.std_err.txt
-#         """
-# 
-# rule star_align:
-#     input: 
-#         dummy="03_posttrim_fastqc/{file_names}.std_out.txt",
-#         files="03_trimmed/{file_names}.trimmed.fastq"
-#     output: "04_aligned/{file_names}.Aligned.out.bam"
-#     threads: 15
-#     params:
-#         genomeDir=config['genomeDir']
-#     shell:
-#         """
-#         /opt/STAR_old/STAR-2.6.1e/bin/Linux_x86_64/STAR --genomeDir config['genomeDir'] \\
-#         --readFilesIn {input.files} --readFilesCommand cat \\
-#         --outFileNamePrefix 04_aligned/{wildcards.file_names}. \\
-#         --outSAMtype BAM Unsorted \\
-#         --outFilterMultimapNmax 4 \\
-#         --outFilterType BySJout \\
-#         --outSAMmultNmax 1  \\
-#         --alignSJoverhangMin 5 \\
-#         --alignSJDBoverhangMin 1 \\
-#         --outFilterMismatchNmax 999 \\
-#         --outFilterMismatchNoverReadLmax 0.3 \\
-#         --outFilterScoreMinOverLread 0.3 \\
-#         --outFilterMatchNminOverLread 0.3 \\
-#         --alignIntronMin 20 \\
-#         --alignIntronMax 1000000 \\
-#         --genomeLoad LoadAndKeep --limitBAMsortRAM 322122382273  \\
-#         --runThreadN {threads} \\
-#         > 04_aligned/{wildcards.file_names}.std_out.txt
-#         2> 04_aligned/{wildcards.file_names}.std_err.txt
-#         """
-# # already done by trimmomatic
-# #        --clip3pAdapterSeq AAAAAAAA --clip3pAdapterMMp 0.1 \\
-# 
-# rule create_field_OL:
-#     input: "04_aligned/{file_names}.Aligned.out.bam"
-#     output: "04_aligned/{file_names}.fixed_tag.bam"
-#     threads: 1
-#     shell:
-#         """
-#         set +o pipefail;
-#         samtools view -h -@ {threads} {input} \\
-#         | sed -E 's/([0-9]{{3,}})(:)([0-9]{{3,}})(:)([0-9]{{3,}})(_)([A-Z]{{6}})(.*)$/\\1:\\3:\\5:\\7\\8\tOL:Z:\\7/g' \\
-#         | samtools view -O BAM -b -@ {threads} -o {output} - 
-#         """
-# 
-# rule sort_query:
-#     input: "04_aligned/{file_names}.fixed_tag.bam"
-#     output: "05_sorted/{file_names}.bam"
-#     threads: 5
-#     shell:
-#         """
-#         PicardCommandLine SortSam \\
-#         I={input} \\
-#         O={output} \\
-#         SORT_ORDER=queryname \\
-#         > 05_sorted/{wildcards.file_names}.sort.std_out.txt \\
-#         2> 05_sorted/{wildcards.file_names}.sort.std_err.txt
-#         """
-# 
-# rule deduplicate:
-#     input: "05_sorted/{file_names}.bam"
-#     output: "06_deduplicated/{file_names}.deduplicated.bam"
-#     threads: 5
-#     shell:
-#         """
-#         PicardCommandLine MarkDuplicates \\
-#         I={input} \\
-#         O={output} \\
-#         TAGGING_POLICY=All \\
-#         ASSUME_SORT_ORDER=queryname \\
-#         BARCODE_TAG=OL \\
-#         MOLECULAR_IDENTIFIER_TAG=OL \\
-#         REMOVE_DUPLICATES=TRUE \\
-#         READ_NAME_REGEX=null \\
-#         SORTING_COLLECTION_SIZE_RATIO=.8 \\
-#         MAX_FILE_HANDLES=1000 \\
-#         METRICS_FILE={output}.metrics \\
-#         > 06_deduplicated/{wildcards.file_names}.markdup.std_out.txt \\
-#         2> 06_deduplicated/{wildcards.file_names}.markdup.std_err.txt
-#         """
-# 
+
+rule star_align:
+    input: "04-trim-reads/{file_names}_R1_001.fastq.gz"
+    output: "05_aligned/{file_names}.Aligned.out.bam"
+    threads: 15
+    params:
+        genomeDir=config['genomeDir']
+    shell:
+        """
+        /opt/STAR_old/STAR-2.6.1e/bin/Linux_x86_64/STAR \\
+        --genomeDir {params.genomeDir} \\
+        --readFilesIn {input} \\
+        --readFilesCommand zcat \\
+        --outFileNamePrefix 05_aligned/{wildcards.file_names}. \\
+        --outSAMtype BAM Unsorted \\
+        --outFilterMultimapNmax 4 \\
+        --outFilterType BySJout \\
+        --outSAMmultNmax 1  \\
+        --alignSJoverhangMin 5 \\
+        --alignSJDBoverhangMin 1 \\
+        --outFilterMismatchNmax 999 \\
+        --outFilterMismatchNoverReadLmax 0.3 \\
+        --outFilterScoreMinOverLread 0.3 \\
+        --outFilterMatchNminOverLread 0.3 \\
+        --alignIntronMin 20 \\
+        --alignIntronMax 1000000 \\
+        --genomeLoad LoadAndKeep \\
+        --limitBAMsortRAM 322122382273  \\
+        --runThreadN {threads} \\
+        > 05_aligned/{wildcards.file_names}.std_out.txt \\
+        2> 05_aligned/{wildcards.file_names}.std_err.txt
+        """
+
+rule create_field_CB_and_UB:
+    input: "05_aligned/{file_names}.Aligned.out.bam"
+    output: "05_aligned/{file_names}.fixed_tag.bam"
+    threads: 1
+    shell:
+        """
+        set +o pipefail;
+        samtools view -h -@ {threads} {input} \\
+        | sed -E 's/_([A-Z]{{24}})_([A-Z]{{10}})(.*)$/_\\1_\\2\\3\tCB:Z:\\1\\2\tUB:Z:\\2/g' \\
+        | samtools view -O BAM -b -@ {threads} -o {output} - 
+        """
+        
+# create field CB (cell barcode) and UB (unique UMI barcode)
+# already done by trimmomatic
+#        --clip3pAdapterSeq AAAAAAAA --clip3pAdapterMMp 0.1 \\
+rule sort_query:
+   input: "05_aligned/{file_names}.fixed_tag.bam"
+   output: "06_sorted/{file_names}.bam"
+   threads: 5
+   shell:
+       """
+       PicardCommandLine SortSam \\
+       I={input} \\
+       O={output} \\
+       SORT_ORDER=coordinate\\
+       > 06_sorted/{wildcards.file_names}.sort.std_out.txt \\
+       2> 06_sorted/{wildcards.file_names}.sort.std_err.txt
+       """
+
+# need to deduplicate based on sublibrary (SM/CB tag) and UMI (OL/UB tag)
+# TODO: use UmiAwareMarkDuplicatesWithMateCigar
+rule deduplicate:
+    input: "06_sorted/{file_names}.bam"
+    output: "07_deduplicated/{file_names}.deduplicated.bam"
+    threads: 5
+    shell:
+        """
+        PicardCommandLine MarkDuplicates \\
+        INPUT={input} \\
+        METRICS_FILE={output}.barcode-metrics.txt \\
+        OUTPUT={output} \\
+        ASSUME_SORT_ORDER=coordinate \\
+        BARCODE_TAG=CB \\
+        CLEAR_DT=FALSE \\
+        DUPLEX_UMI=FALSE \\
+        DUPLICATE_SCORING_STRATEGY=SUM_OF_BASE_QUALITIES \\
+        MAX_FILE_HANDLES=1000 \\
+        MAX_OPTICAL_DUPLICATE_SET_SIZE=300000 \\
+        OPTICAL_DUPLICATE_PIXEL_DISTANCE=2500 \\
+        REMOVE_DUPLICATES=TRUE \\
+        SORTING_COLLECTION_SIZE_RATIO=.8 \\
+        TAGGING_POLICY=All \\
+        > 07_deduplicated/{wildcards.file_names}.markdup.std_out.txt \\
+        2> 07_deduplicated/{wildcards.file_names}.markdup.std_err.txt
+        """
+# {{{ options for deduplicate tool
+# --INPUT,-I:String             One or more input SAM or BAM files to analyze. Must be coordinate sorted. This argument must be specified at least once. Required .
+# --METRICS_FILE,-M:File        File to write duplication metrics to  Required.
+# --OUTPUT,-O:File              The output file to write marked records to  Required. 
+# --arguments_file:File read one or more arguments files and add them to the command line  This argument may be specified 0 or more times. Default value: null.
+# --ASSUME_SORT_ORDER,-ASO:SortOrder  If not null, assume that the input file has this order even if the header says otherwise. Default value: null. Possible values: {unsorted, queryname, coordinate, duplicate,  unknown}  Cannot be used in conjuction with argument(s) ASSUME_SORTED (AS)  
+# --ASSUME_SORTED,-AS:Boolean If true, assume that the input file is coordinate sorted even if the header says otherwise. Deprecated, used ASSUME_SORT_ORDER=coordinate instead.  Default value: false. Possible values: {true, false}  Cannot be used in conjuction with argument(s)  ASSUME_SORT_ORDER (ASO) 
+# --BARCODE_TAG:String  Barcode SAM tag (ex. BC for 10X Genomics)  Default value: null. 
+# --CLEAR_DT:Boolean  Clear DT tag from input SAM records. Should be set to false if input SAM doesn't have this tag.  Default true  Default value: true. Possible values: {true, false} 
+# --COMMENT,-CO:String  Comment(s) to include in the output file's header.  This argument may be specified 0 or more times. Default value: null.  
+# --DUPLEX_UMI:Boolean  Treat UMIs as being duplex stranded.  This option requires that the UMI consist of two equal length strings that are separated by a hyphen (e.g. 'ATC-GTC'). Reads are considered duplicates if, in addition to standard definition, have identical normalized UMIs.  A UMI from the 'bottom' strand is normalized by swapping its content around the hyphen (eg. ATC-GTC becomes GTC-ATC).  A UMI from the 'top' strand is already normalized as it is. Both reads from a read pair considered top strand if the read 1 unclipped 5' coordinate is less than the read 2 unclipped 5' coordinate. All chimeric reads and read fragments are treated as having come from the top strand. With this option is it required that the  BARCODE_TAG hold non-normalized UMIs. Default false.  Default value: false. Possible values: {true, false}  
+# --DUPLICATE_SCORING_STRATEGY,-DS:ScoringStrategy  The scoring strategy for choosing the non-duplicate among candidates.  Default value: 
+#   SUM_OF_BASE_QUALITIES. Possible values: {SUM_OF_BASE_QUALITIES, TOTAL_MAPPED_REFERENCE_LENGTH, RANDOM}  
+# --help,-h:Boolean display the help message  Default value: false. Possible values: {true, false}  
+# --MAX_FILE_HANDLES_FOR_READ_ENDS_MAP,-MAX_FILE_HANDLES:Integer Maximum number of file handles to keep open when spilling read ends to disk. Set this number a little lower than the per-process maximum number of file that may be open. This number can be found by executing the 'ulimit -n' command on a Unix system.  Default value: 8000. 
+# --MAX_OPTICAL_DUPLICATE_SET_SIZE:Long  This number is the maximum size of a set of duplicate reads for which we will attempt to  determine which are optical duplicates.  Please be aware that if you raise this value too high and do encounter a very large set of duplicate reads, it will severely affect the  runtime of this tool.  To completely disable this check, set the value to -1.  Default  value: 300000.  
+# --MOLECULAR_IDENTIFIER_TAG:String SAM tag to uniquely identify the molecule from which a read was derived.  Use of this option requires that the BARCODE_TAG option be set to a non null value.  Default null.  Default value: null. 
+# --OPTICAL_DUPLICATE_PIXEL_DISTANCE:Integer The maximum offset between two duplicate clusters in order to consider them optical   duplicates. The default is appropriate for unpatterned versions of the Illumina platform. For the patterned flowcell models, 2500 is moreappropriate. For other platforms and  models, users should experiment to find what works best.  Default value: 100. 
+# --PROGRAM_GROUP_COMMAND_LINE,-PG_COMMAND:String Value of CL tag of PG record to be created. If not supplied the command line will be   detected automatically.  Default value: null. 
+# --PROGRAM_GROUP_NAME,-PG_NAME:String  Value of PN tag of PG record to be created.  Default value: MarkDuplicates. 
+# --PROGRAM_GROUP_VERSION,-PG_VERSION:String  Value of VN tag of PG record to be created. If not specified, the version will be detected  automatically.  Default value: null.  
+# --PROGRAM_RECORD_ID,-PG:StringThe program record ID for the @PG record(s) created by this program. Set to null to disable PG record creation.  This string may have a suffix appended to avoid collision  with other program record IDs.  Default value: MarkDuplicates.  
+# --READ_NAME_REGEX:String  MarkDuplicates can use the tile and cluster positions to estimate the rate of optical duplication in addition to the dominant source of duplication, PCR, to provide a more accurate estimation of library size. By default (with no READ_NAME_REGEX specified),  MarkDuplicates will attempt to extract coordinates using a split on ':' (see Note below).  Set READ_NAME_REGEX to 'null' to disable optical duplicate detection. Note that without optical duplicate counts, library size estimation will be less accurate. If the read name  does not follow a standard Illumina colon-separation convention, but does contain tile and  x,y coordinates, a regular expression can be specified to extract three variables:  tile/region, x coordinate and y coordinate from a read name. The regular expression must  contain three capture groups for the three variables, in order. It must match the entire  read name. e.g. if field names were separated by semi-colon (';') this example regex  could be specified  (?:.*;)?([0-9]+)[^;]*;([0-9]+)[^;]*;([0-9]+)[^;]*$ Note that if no  READ_NAME_REGEX is specified, the read name is split on ':'. For 5 element names, the  3rd, 4th and 5th elements are assumed to be tile, x and y values. For 7 element names (CASAVA 1.8), the 5th, 6th, and 7th elements are assumed to be tile, x and y values.  Default value: <optimized capture of last three ':' separated fields as numeric values>.  
+# --READ_ONE_BARCODE_TAG:String Read one barcode SAM tag (ex. BX for 10X Genomics)  Default value: null.  
+# --READ_TWO_BARCODE_TAG:String Read two barcode SAM tag (ex. BX for 10X Genomics)  Default value: null.  
+# --REMOVE_DUPLICATES:Boolean If true do not write duplicates to the output file instead of writing them with appropriate flags set.  Default value: false. Possible values: {true, false}  
+# --REMOVE_SEQUENCING_DUPLICATES:Boolean  If true remove 'optical' duplicates and other duplicates that appear to have arisen from  the sequencing process instead of the library preparation process, even if  REMOVE_DUPLICATES is false. If REMOVE_DUPLICATES is true, all duplicates are removed and  this option is ignored.  Default value: false. Possible values: {true, false} 
+# --SORTING_COLLECTION_SIZE_RATIO:Double  This number, plus the maximum RAM available to the JVM, determine the memory footprint   used by some of the sorting collections.  If you are running out of memory, try reducing  this number.  Default value: 0.25.  
+# --TAG_DUPLICATE_SET_MEMBERS:Boolean  If a read appears in a duplicate set, add two tags. The first tag, DUPLICATE_SET_SIZE_TAG (DS), indicates the size of the duplicate set. The smallest possible DS value is 2 which   occurs when two reads map to the same portion of the reference only one of which is marked  as duplicate. The second tag, DUPLICATE_SET_INDEX_TAG (DI), represents a unique identifier  for the duplicate set to which the record belongs. This identifier is the index-in-file of  the representative read that was selected out of the duplicate set.  Default value: false.  Possible values: {true, false}  
+# --TAGGING_POLICY:DuplicateTaggingPolicy Determines how duplicate types are recorded in the DT optional attribute.  Default value: DontTag. Possible values: {DontTag, OpticalOnly, All} 
+# --version:Boolean display the version number for this tool  Default value: false. Possible values: {true, false}
+# }}}
+
+rule bam_index:
+    input: "07_deduplicated/{file_names}.deduplicated.bam"
+    output: "07_deduplicated/{file_names}.deduplicated.bam.bai"
+    shell:
+        """
+        samtools index \\
+        {input} \\
+        > 07_deduplicated/{wildcards.file_names}.index.std_out.txt \\
+        2> 07_deduplicated/{wildcards.file_names}.index.std_err.txt
+        """
+# featureCounts does not include options to account umi and barcodes
+# can still use feature counts if we splitup the file into the component single-nucleus libraries
+# otherwise will use htseq-counts which is single-threaded but fine for this case 
+
+# option 1: split each bam file into a bam file for each single-nucleus library
+# option 2: use htseq-counts, with barcoded, position-sorted bams
+# for now try option 2
+# cb tag is barcode, ub tag is umi
+# will need to investigage options 1, options 2 is way too slow
+rule hts_seq_counts:
+    input: 
+        file="07_deduplicated/{file_names}.deduplicated.bam",
+        index="07_deduplicated/{file_names}.deduplicated.bam.bai"
+    output: "08_feature_count/{file_names}.deduplicated.bam.featureCounts.tsv"
+    threads: 1
+    params:
+        gtfFile=config['gtfFile']
+    shell:
+        """
+        htseq-count-barcodes {input.file} {params.gtfFile} \\
+        --stranded yes \\
+        --minaqual 0 \\
+        --type gene \\
+        --idattr gene_id \\
+        --mode union \\
+        --nonunique all \\
+        --secondary-alignments ignore \\
+        --supplementary-alignments ignore \\
+        --delimiter "\t" \\
+        --counts_output {output} \\
+        --cell-barcode CB \\
+        --UMI UB \\
+        > 08_feature_count/{wildcards.file_names}.std_out.txt \\
+        2> 08_feature_count/{wildcards.file_names}.std_err.txt
+        """
+# {{{ options documentation
+# This script takes one alignment file in SAM/BAM format and a feature file in GFF format and calculates for each feature the numberof reads mapping to it, accounting for barcodes. See http://htseq.readthedocs.io/en/master/count.html for details. positional arguments:
+# - samfilename Path to the SAM/BAM file containing the barcoded, mapped reads. If '-' is selected, read from standard input
+# - featuresfilename Path to the GTF file containing the features
+# optional arguments:
+# -h, --help show this help message and exit
+# -f {sam,bam,auto}, --format {sam,bam,auto} Type of <alignment_file> data. DEPRECATED: file format is detected automatically. This option is ignored.
+# -r {pos,name}, --order {pos,name} 'pos' or 'name'. Sorting order of <alignment_file> (default: name). Paired-end sequencing data must be sorted either by position or by read name, and the sorting order must be specified. Ignored for single-end data.
+# --max-reads-in-buffer MAX_BUFFER_SIZE When <alignment_file> is paired end sorted by position, allow only so many reads to stay in memory until the mates are found (raising this number will use more memory). Has no effect for single end or paired end sorted by name
+# -s {yes,no,reverse}, --stranded {yes,no,reverse} Whether the data is from a strand-specific assay. Specify 'yes', 'no', or 'reverse' (default: yes). 'reverse' means 'yes' with reversed strand interpretation
+# -a MINAQUAL, --minaqual MINAQUAL Skip all reads with MAPQ alignment quality lower than the given minimum value (default: 10). MAPQ is the 5th column of a SAM/BAM file and its usage depends on the software used to map the reads.
+# -t FEATURETYPE, --type FEATURETYPE Feature type (3rd column in GTF file) to be used, all features of other type are ignored (default, suitable for Ensembl GTF files: exon)
+# -i IDATTR, --idattr IDATTR GTF attribute to be used as feature ID (default, suitable for Ensembl GTF files: gene_id)
+# --additional-attr ADDITIONAL_ATTR Additional feature attributes (default: none, suitable for Ensembl GTF files: gene_name). Use multiple times for each different attribute
+# -m {union,intersection-strict,intersection-nonempty}, --mode {union,intersection-strict,intersection-nonempty} Mode to handle reads overlapping more than one feature (choices: union, intersection-strict, intersection- nonempty; default: union)
+# --nonunique {none,all} Whether to score reads that are not uniquely aligned or ambiguously assigned to features
+# --secondary-alignments {score,ignore} Whether to score secondary alignments (0x100 flag)
+# --supplementary-alignments {score,ignore} Whether to score supplementary alignments (0x800 flag)
+# -o SAMOUT, --samout SAMOUT Write out all SAM alignment records into aSAM/BAM file, annotating each line with its feature assignment (as an optional field with tag 'XF'). See the -p option to use BAM instead of SAM.
+# -p {SAM,BAM,sam,bam}, --samout-format {SAM,BAM,sam,bam} Format to use with the --samout option.
+# -d OUTPUT_DELIMITER, --delimiter OUTPUT_DELIMITER Column delimiter in output (default: TAB).
+# -c OUTPUT_FILENAME, --counts_output OUTPUT_FILENAME TSV/CSV filename to output the counts to instead of stdout.
+# --cell-barcode CB_TAG BAM tag used for the cell barcode (default compatible with 10X Genomics Chromium is CB).
+# --UMI UB_TAG BAM tag used for the unique molecular identifier, also known as molecular barcode (default compatible with
+#10X Genomics Chromium is UB).
+# -q, --quiet Suppress progress report
+# --version Show software version and exit
+# }}}
+
 # rule feature_counts:
-#     input: "06_deduplicated/{file_names}.deduplicated.bam"
-#     output: "07_feature_count/{file_names}.deduplicated.bam.featureCounts.bam"
+#     input: "07_deduplicated/{file_names}.deduplicated.bam"
+#     output: "08_feature_count/{file_names}.deduplicated.bam.featureCounts.bam"
 #     threads: 15
 #     params:
 #         gtfFile=config['gtfFile']
@@ -270,6 +372,7 @@ rule multiqc:
 #         > 08_feature_count/{wildcards.file_names}.std_out.txt \\
 #         2> 08_feature_count/{wildcards.file_names}.std_err.txt
 #         """
+
 # # options:
 # # -a gtf file input
 # # -o output file count matrix
@@ -279,6 +382,18 @@ rule multiqc:
 # # -M multi-mapping reads will counted. Uses NH tag for multimappers.
 # # -O assign reads to all overlaping features
 # # --fraction Assign fractional counts to features
+rule multiqc:
+    input: 
+        inDir=".",
+        fastqcReport = expand("02-fastqc/{fileFull}.std_err.txt", fileFull=fileN),
+        processedReads = expand("08_feature_count/{file_names}.deduplicated.bam.featureCounts.tsv", file_names = sampleN)
+    output:
+        outFile="09_multiqc/multiqc_report.html"
+    shell:
+        """
+        multiqc {input.inDir} \\
+        -o 09_multiqc
+        """
 # 
 # rule bam_sort:
 #     input: "07_feature_count/{file_names}.deduplicated.bam.featureCounts.bam"
