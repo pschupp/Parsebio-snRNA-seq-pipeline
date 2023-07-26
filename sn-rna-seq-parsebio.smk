@@ -109,13 +109,10 @@ rule fastqc:
         2> {log.stdErr} 
         """
 
-# TODO: is there any hamming code correction? 
-# TODO: implement whitelist and see if htseq runs any faster. if it does great, also try with previous dataset that worked better
-
-rule umi_tools:
+rule umi_tools_extract:
     input: "01-basecalled/basecalling.log.txt"
-    output: "03-umi-extract/{file_names}_R1_001.fastq.gz"
-    log: "03-umi-extract/{file_names}.log.txt"
+    output: "02-barcode-umi-extract/{file_names}_R1_001.fastq.gz"
+    log: "02-barcode-umi-extract/{file_names}.log.txt"
     params:
         bcRegex=lambda wildcards: '"(?P<umi_1>.{10})(?P<cell_3>.{8})(?P<discard_1>GTGGCCGATGTTTCGCATCGGCGTACGACT){s<=30}(?P<cell_2>.{8})(?P<discard_2>ATCCACGTGCTTGAGACTGTGG){s<=22}(?P<cell_1>.{8}).*"',
         files = "01-basecalled/{file_names}_R1_001.fastq.gz",
@@ -129,13 +126,22 @@ rule umi_tools:
         --read2-in={params.files} \\
         --read2-out={output} \\
         --stdin=01-basecalled/{wildcards.file_names}_R2_001.fastq.gz \\
-        --stdout=03-umi-extract/{wildcards.file_names}_R2_001.fastq.gz \\
-        --log={log} \\
-        --whitelist={params.whitelist} 
+        --stdout=02-barcode-umi-extract/{wildcards.file_names}_R2_001.fastq.gz \\
+        --log={log}
         """
 
+rule custom_barcode_correction_script:
+    input: "02-barcode-umi-extract/{file_names}_R1_001.fastq.gz"
+    output: "03-barcode-filter/{file_names}_R1_001.fastq.gz"
+    log: "03-barcode-filter/{file_names}.log.txt"
+    params:
+        barcodeList = 'barcode_data.csv'
+    threads: 1
+    script:
+        "scripts/barcode_selection_correction.py"
+
 rule trimmomatic:
-    input: "03-umi-extract/{file_names}_R1_001.fastq.gz"
+    input: "03-barcode-filter/{file_names}_R1_001.fastq.gz"
     output: "04-trim-reads/{file_names}_R1_001.fastq.gz"
     params:
         headcrop=4,

@@ -37,10 +37,10 @@ def find_best_match(sequence, barcode_list, min_distance):
         if  h_distance <= min_distance:
             return({'input':sequence, 'correction':read, 'distance':h_distance})
         else: 
-            return({'input':sequence, 'correction':'no match', 'distance':'no match'})
+            return({'input':sequence, 'correction':'NNNNNNNN', 'distance':'no match'})
 
 editDistance = 1
-whiteList = pandas.read_table('barcode_data.csv', sep =',', skiprows =4)
+whiteList = pandas.read_table(snakemake.params['barcodeList'], sep =',', skiprows =4)
 barcodeOne = whiteList['sequence'][0:24]
 barcodeTwo = whiteList['sequence'][25:121]
 barcodeThree = whiteList['sequence'][123:218]
@@ -60,14 +60,11 @@ minDistTwo = min_hamming_set(barcodeTwo) # minimum Hamming distance is 4
 minDistThree = min_hamming_set(barcodeThree) # minimum Hamming distance is 4
 
 # for now read in one specific file and operate on it. in the future this will be an argument from snakemake, i.e. {input}.
-os.chdir(os.path.expanduser("~")+"/@patrick/parsebio/23_05/03-umi-extract")
-file_content=seqGz.read()
-
 matchesOne = []
 matchesTwo = []
 matchesThree = []
 output = []
-seqGz = gzip.open('unamed-sublibrary-1_S2_R1_001.fastq.gz', 'rt')
+seqGz = gzip.open(snakemake.input[0], 'rt')
 for title, sequence, qual in Bio.SeqIO.QualityIO.FastqGeneralIterator(seqGz):
     barcode = title.split(sep = '_')[1]
     bc1 = barcode[0:8]
@@ -76,7 +73,7 @@ for title, sequence, qual in Bio.SeqIO.QualityIO.FastqGeneralIterator(seqGz):
     tempOne = find_best_match(bc1, barcodeOne, minDistOne)
     tempTwo = find_best_match(bc2, barcodeTwo, minDistTwo)
     tempThree = find_best_match(bc3, barcodeThree, minDistThree)
-    if((tempOne['correction'] != 'no match') & (tempTwo['correction'] != 'no match') & (tempTwo['correction'] != 'no match')):
+    if((tempOne['correction'] != 'NNNNNNNN') & (tempTwo['correction'] != 'NNNNNNNN') & (tempTwo['correction'] != 'NNNNNNNN')):
         titleOut = title.split(sep = '_')[0] + '_' + tempOne['correction'] + tempTwo['correction'] + tempThree['correction'] + '_' + title.split(sep = '_')[2]
         output.append("@%s\n%s\n+\n%s\n" % (titleOut, sequence, qual))
     matchesOne.append(tempOne)
@@ -88,11 +85,11 @@ matchesTwo = pandas.DataFrame(matchesTwo)
 matchesThree = pandas.DataFrame(matchesThree)
 
 # need to correct existing barcodes and write out log files
-with gzip.open('unamed-sublibrary-1_S2_R1_001_test.fastq.gz', 'wt') as f:
+with gzip.open(snakemake.output[0], 'wt') as f:
     for line in output:
         f.write(line)
 
-with open('unamed-sublibrary-1_S2_R1_001_test.log.txt', 'w') as f:
+with open(snakemake.log[0], 'w') as f:
     f.write('Reads analyzed: ' + str(matchesOne.shape[0]))
     f.write('\nReads passing barcode filter: ' + str(len(output))) 
     f.write('\nBarcode one distribution (min dist ' + str(minDistOne) + '):\n')
