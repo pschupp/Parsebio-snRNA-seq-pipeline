@@ -202,7 +202,7 @@ rule create_field_CB_and_UB:
         """
         set +o pipefail;
         samtools view -h -@ {threads} {input} \\
-        | sed -E 's/_([A-Z]{{24}})_([A-Z]{{10}})(.*)$/_\\1_\\2\\3\tCB:Z:\\1\\2\tUB:Z:\\2/g' \\
+                | sed -E 's/_([A-Z]{{24}})_([A-Z]{{10}})(.*)$/_\\1_\\2\\3\tCB:Z:\\1\\2\tUB:Z:\\2\tBC:Z:\\1/g' \\
         | samtools view -O BAM -b -@ {threads} -o {output} - 
         """
 # {{{ documentation for command        
@@ -323,7 +323,7 @@ rule hts_seq_counts:
         --supplementary-alignments ignore \\
         --delimiter "\t" \\
         --counts_output {output} \\
-        --cell-barcode CB \\
+        --cell-barcode BC \\
         --UMI UB \\
         > 08_feature_count/{wildcards.file_names}.std_out.txt \\
         2> 08_feature_count/{wildcards.file_names}.std_err.txt

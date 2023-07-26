@@ -73,7 +73,7 @@ for title, sequence, qual in Bio.SeqIO.QualityIO.FastqGeneralIterator(seqGz):
     tempOne = find_best_match(bc1, barcodeOne, minDistOne)
     tempTwo = find_best_match(bc2, barcodeTwo, minDistTwo)
     tempThree = find_best_match(bc3, barcodeThree, minDistThree)
-    if((tempOne['correction'] != 'NNNNNNNN') & (tempTwo['correction'] != 'NNNNNNNN') & (tempTwo['correction'] != 'NNNNNNNN')):
+    if((tempOne['correction'] != 'NNNNNNNN') & (tempTwo['correction'] != 'NNNNNNNN') & (tempThree['correction'] != 'NNNNNNNN')):
         titleOut = title.split(sep = '_')[0] + '_' + tempOne['correction'] + tempTwo['correction'] + tempThree['correction'] + '_' + title.split(sep = '_')[2]
         output.append("@%s\n%s\n+\n%s\n" % (titleOut, sequence, qual))
     matchesOne.append(tempOne)
