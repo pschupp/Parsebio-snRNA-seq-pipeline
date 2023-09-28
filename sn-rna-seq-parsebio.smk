@@ -57,7 +57,7 @@ sample.to_csv(path_or_buf = folder + '/SampleSheet.csv', sep = ',', header = Tru
 sampleN = sample['Sample_Name'] + '_S' + sample['Sample_ID']
 rn = [['_R1']*len(sample['Sample_Name']), ['_R2']*len(sample['Sample_Name'])]
 rn = [x for y in rn for x in y]
-fileN = sample['Sample_Name'] + '_S' + sample['Sample_ID']
+fileN = sample['Sample_Name'] + '_S' + sample['Sample_ID'] 
 fileN = (pandas.concat([fileN, fileN]) + rn).sort_values().tolist()
 
 rule all:

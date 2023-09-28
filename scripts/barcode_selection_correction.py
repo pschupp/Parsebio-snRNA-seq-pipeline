@@ -27,19 +27,19 @@ def find_best_match(sequence, barcode_list, min_distance):
     # if a perfect match exists, just output as is
     if sequence in barcode_list:
         return({'input':sequence, 'correction':sequence, 'distance':0})
-    curr_barcode = None
     for read in barcode_list:
         h_distance = hamming_distance(sequence, read)
         # since if there was a perfect match we won't be here, 
         # if distance is 1, we'll never do better
         if h_distance == 1:
             return({'input':sequence, 'correction':read, 'distance':1})
-        if  h_distance <= min_distance:
+            break
+        if h_distance <= min_distance:
             return({'input':sequence, 'correction':read, 'distance':h_distance})
-        else: 
-            return({'input':sequence, 'correction':'NNNNNNNN', 'distance':'no match'})
+            break
+    else: 
+        return({'input':sequence, 'correction':'NNNNNNNN', 'distance':'no match'})
 
-editDistance = 1
 whiteList = pandas.read_table(snakemake.params['barcodeList'], sep =',', skiprows =4)
 barcodeOne = whiteList['sequence'][0:24]
 barcodeTwo = whiteList['sequence'][25:121]
@@ -92,9 +92,15 @@ with gzip.open(snakemake.output[0], 'wt') as f:
 with open(snakemake.log[0], 'w') as f:
     f.write('Reads analyzed: ' + str(matchesOne.shape[0]))
     f.write('\nReads passing barcode filter: ' + str(len(output))) 
-    f.write('\nBarcode one distribution (min dist ' + str(minDistOne) + '):\n')
+    f.write('\nBarcode one distance distribution (min dist ' + str(minDistOne) + '):\n')
     f.write('dist count\n' + matchesOne['distance'].value_counts().to_string())
-    f.write('\nBarcode two distribution (min dist ' + str(minDistTwo) + '):\n')
+    f.write('\nBarcode two distance distribution (min dist ' + str(minDistTwo) + '):\n')
     f.write('dist count\n' + matchesTwo['distance'].value_counts().to_string())
-    f.write('\nBarcode three distribution (min dist ' + str(minDistThree) + '):\n')
+    f.write('\nBarcode three distance distribution (min dist ' + str(minDistThree) + '):\n')
     f.write('dist count\n' + matchesThree['distance'].value_counts().to_string())
+    f.write('\nBarcode one barcode distribution (min dist ' + str(minDistOne) + '):\n')
+    f.write('dist count\n' + matchesOne['correction'].value_counts().to_string())
+    f.write('\nBarcode two barcode distribution (min dist ' + str(minDistTwo) + '):\n')
+    f.write('dist count\n' + matchesTwo['correction'].value_counts().to_string())
+    f.write('\nBarcode three barcode distribution (min dist ' + str(minDistThree) + '):\n')
+    f.write('dist count\n' + matchesThree['correction'].value_counts().to_string())
