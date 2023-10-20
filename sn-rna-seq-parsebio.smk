@@ -114,7 +114,7 @@ rule umi_tools_extract:
     output: "02-barcode-umi-extract/{file_names}_R1_001.fastq.gz"
     log: "02-barcode-umi-extract/{file_names}.log.txt"
     params:
-        bcRegex=lambda wildcards: '"(?P<umi_1>.{10})(?P<cell_3>.{8})(?P<discard_1>GTGGCCGATGTTTCGCATCGGCGTACGACT){s<=30}(?P<cell_2>.{8})(?P<discard_2>ATCCACGTGCTTGAGACTGTGG){s<=22}(?P<cell_1>.{8}).*"',
+        bcRegex=lambda wildcards: '"(?P<umi_1>.{10})(?P<cell_3>.{8})(?P<discard_1>GTGGCCGATGTTTCGCATCGGCGTACGACT){s<=4}(?P<cell_2>.{8})(?P<discard_2>.{10,14})(?P<discard_3)GACTGTGG){s<=2}(?P<cell_1>.{8}).*"',
         files = "01-basecalled/{file_names}_R1_001.fastq.gz",
         whitelist = "."
     threads: 1
@@ -129,6 +129,10 @@ rule umi_tools_extract:
         --stdout=02-barcode-umi-extract/{wildcards.file_names}_R2_001.fastq.gz \\
         --log={log}
         """
+# {{{ documentation for umi-tools extract
+#   old version of the regex 
+#        bcRegex=lambda wildcards: '"(?P<umi_1>.{10})(?P<cell_3>.{8})(?P<discard_1>GTGGCCGATGTTTCGCATCGGCGTACGACT){s<=30}(?P<cell_2>.{8})(?P<discard_2>ATCCACGTGCTTGAGACTGTGG){s<=22}(?P<cell_1>.{8}).*"',
+# }}}
 
 rule custom_barcode_correction_script:
     input: "02-barcode-umi-extract/{file_names}_R1_001.fastq.gz"
