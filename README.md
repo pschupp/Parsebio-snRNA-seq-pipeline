@@ -1,5 +1,21 @@
 # Parsebio pipeline
 
+## Quick-start
+
+Copy the pipeline file `sn-rna-seq-parsebio.smk`, the `scripts` folder and the `barcodes` folder into the base directory of the sequencing run.
+
+The script also expects 
+    1. a folder starting with six digits (the date). Inside this folder should be the Sample Sheet (`SampleSheet.csv`) with relevant names and barcodes. For more information on what the Sample Sheet should look like, see XXX. 
+    2. If basecalled already, add all `.fastq.gz` files into a folder called `01_basecalled`.
+
+## FAQ
+
+### Why do I have to copy the files?
+Stuff about version control etc...
+
+
+## Kits and associated barcodes
+
 | kit     | chem | nwells | bc1     | bc2 | bc3 | ktype   |
 | ---     | ---  | ---    | ---     | --- | --- | ---     |
 | custom  | NA   | 1      | NA      | NA  | NA  | special |

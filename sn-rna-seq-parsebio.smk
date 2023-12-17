@@ -64,7 +64,7 @@ rule all:
     input: "09_multiqc/multiqc_report.html"
             
 rule bcl_2_fastq:
-    output: "01-basecalled/basecalling.log.txt"
+    output: "01-basecalled"
     params: runfolder = folder
     shell:
         """
@@ -92,7 +92,7 @@ rule bcl_2_fastq:
 # }}}
 
 rule fastqc:
-    input: "01-basecalled/basecalling.log.txt"
+    input: "01-basecalled"
     output: "02-fastqc/{fileFull}_001_fastqc.html"
     params: "01-basecalled/{fileFull}_001.fastq.gz"
     log: 
@@ -110,7 +110,7 @@ rule fastqc:
         """
 
 rule umi_tools_extract:
-    input: "01-basecalled/basecalling.log.txt"
+    input: "01-basecalled/"
     output: "02-barcode-umi-extract/{file_names}_R1_001.fastq.gz"
     log: "02-barcode-umi-extract/{file_names}.log.txt"
     params:
