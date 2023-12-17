@@ -41,9 +41,9 @@ def find_best_match(sequence, barcode_list, min_distance):
         return({'input':sequence, 'correction':'NNNNNNNN', 'distance':'no match'})
 
 whiteList = pandas.read_table(snakemake.params['barcodeList'], sep =',', skiprows =4)
-barcodeOne = whiteList['sequence'][0:24]
-barcodeTwo = whiteList['sequence'][25:121]
-barcodeThree = whiteList['sequence'][123:218]
+barcodeOne = whiteList['sequence'][0:96]
+barcodeTwo = whiteList['sequence'][97:193]
+barcodeThree = whiteList['sequence'][194:290]
 
 # identify the minimum inherent edit distance within each barcode set
 def min_hamming_set(inputList):
